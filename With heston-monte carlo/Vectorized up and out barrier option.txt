@@ -1,0 +1,84 @@
+
+def vectorized_barrier_option_price_with_xva(S, K, B, T, a, b, rho_svi, m, s, F, r, v0, kappa, theta, xi, rho,
+                                             lambda_jump, mu_jump, delta_jump, q, 
+                                             option='call', barrier_type='up-and-out',
+                                             N=100000, M=100, PD=0.01, LGD=0.4, funding_rate=0.02):
+    
+    dt = T / M
+    option_price = 0.0
+    
+    # Initialize asset prices and volatilities for N simulations
+    S_t = np.full(N, S)
+    v_t = np.full(N, v0)
+    crossed_barrier = np.zeros(N, dtype=bool)
+
+    EE = np.zeros(M+1)  # Initialize Expected Exposure array to store EE at each time step
+    
+    # Initialize for control variate
+    control_payoff = np.zeros(N)
+    known_control_value = Black_Scholes(S, K, T, r, 0.2)  # Replace 0.2 with the actual volatility
+    
+    for j in range(M):
+        
+        # Calculate the volatility using the SVI model parameters
+        sigma = volatility_surface(K, T - j * dt, a, b, rho_svi, m, s, F)
+        
+        # Generate correlated random numbers for asset price and volatility
+        Z = np.random.normal(0, 1, (2, N))
+        antithetic_Z = -Z
+        Z1, Z2 = Z[0], rho * Z[0] + np.sqrt(1 - rho ** 2) * Z[1]
+        antithetic_Z1, antithetic_Z2 = antithetic_Z[0], rho * antithetic_Z[0] + np.sqrt(1 - rho ** 2) * antithetic_Z[1]
+        
+        # Heston model with Milstein method for all paths
+        # Simulating for both original and antithetic paths
+        v_t = np.maximum(v_t, 0)
+        v_t += kappa * (theta - v_t) * dt + xi * np.sqrt(v_t) * np.sqrt(dt) * Z1 + 0.25 * xi ** 2 * dt * (Z1 ** 2 - 1)
+        
+        # Simulate jumps for all paths
+        jumps = np.random.poisson(lambda_jump * dt, N)
+        S_jump = np.exp(mu_jump * jumps + 0.5 * delta_jump ** 2 * jumps)
+        
+        # Update asset price for all paths
+        # For original paths
+        dS_t = (r - q - 0.5 * v_t) * S_t * dt + np.sqrt(v_t * S_t) * np.sqrt(dt) * Z2
+        S_t += dS_t + 0.5 * v_t * S_t * dt * (Z2 ** 2 - 1) * S_jump
+        
+        # Update barrier crossing flags
+        if barrier_type == 'up-and-out':
+            crossed_barrier = np.logical_or(crossed_barrier, S_t > B)
+        
+        # Calculate Expected Exposure (EE) at each time step for original paths
+        payoffs = np.maximum(S_t - K, 0) if option == 'call' else np.maximum(K - S_t, 0)
+        EE[j+1] = np.mean(payoffs)
+        
+        # Compute the control variate value for each path
+        control_payoff += np.exp(-r * j * dt) * payoffs  # Adjust this to your control variate
+
+    # Zero out payoffs for paths that crossed the barrier for original paths
+    if barrier_type == 'up-and-out' or barrier_type == 'down-and-out':
+        payoffs[crossed_barrier] = 0
+
+    # Average payoff for original paths
+    option_price = np.mean(np.exp(-r * T) * payoffs)
+    
+    # Calculate covariance for control variate
+    cov_matrix = np.cov(payoffs, control_payoff)
+    c = -cov_matrix[0, 1] / np.var(control_payoff)
+    
+    # Adjust the average payoff using the control variate
+    adjusted_option_price = option_price + c * (np.mean(control_payoff) - known_control_value)
+    
+    # Calculate XVA metrics, using trapezoidal integration for the expected exposure
+    CVA = np.trapz(EE * np.exp(-r * np.linspace(0, T, M+1))) * PD * LGD
+    DVA = CVA  # Assuming symmetric CVA and DVA for simplicity
+    FVA = np.trapz(EE * np.exp(-r * np.linspace(0, T, M+1))) * funding_rate
+    
+    # XVA-adjusted option price
+    xva_adjusted_option_price = adjusted_option_price + CVA - DVA + FVA
+    
+    return xva_adjusted_option_price, CVA, DVA, FVA
+xva_adjusted_option_price, CVA, DVA, FVA = vectorized_barrier_option_price_with_xva(S, K, B, T, a, b, rho_svi, m, s, F, r, v0, kappa, theta, xi, rho, lambda_jump, mu_jump, delta_jump, q)
+print("XVA-adjusted Option Price:", xva_adjusted_option_price)
+print("CVA:", CVA)
+print("DVA:", DVA)
+print("FVA:", FVA)

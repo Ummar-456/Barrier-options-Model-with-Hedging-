@@ -1,0 +1,34 @@
+
+# Initial portfolio
+num_options = 23
+initial_option_positions = [num_options] * num_options  # List of initial positions
+
+# Define function to calculate portfolio Greeks
+def calculate_portfolio_greeks(option_positions, S, K, B, T, a, b, rho_svi, m, s, F, r):
+    portfolio_delta = 0
+    portfolio_gamma = 0
+    portfolio_vega = 0
+    portfolio_theta = 0  # Initialize to 0
+    for position in option_positions:
+        # Calculate individual option Greeks
+        option_delta = calculate_delta_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F) * position
+        option_gamma = calculate_gamma_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F) * position
+        option_vega = calculate_vega_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F) * position
+        option_theta = calculate_theta_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, r) * position  # Multiply by position
+        # Update portfolio Greeks
+        portfolio_delta += option_delta
+        portfolio_gamma += option_gamma
+        portfolio_vega += option_vega
+        portfolio_theta += option_theta  # Corrected typo here
+
+    return portfolio_delta, portfolio_gamma, portfolio_vega, portfolio_theta
+
+
+# Calculate portfolio Greeks
+portfolio_delta, portfolio_gamma, portfolio_vega,portfolio_theta = calculate_portfolio_greeks(initial_option_positions, S, K, B, T, a, b, rho_svi, m, s, F, r)
+
+# Print portfolio Greeks
+print(f"Portfolio Delta: {portfolio_delta}")
+print(f"Portfolio Gamma: {portfolio_gamma}")
+print(f"Portfolio Vega: {portfolio_vega}")
+print(f"Portfolio Theta: {portfolio_theta}")

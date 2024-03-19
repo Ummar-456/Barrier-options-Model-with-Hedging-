@@ -1,0 +1,544 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from numba import jit
+import plotly.graph_objects as go
+import ipywidgets as widgets
+from ipywidgets import interact
+import seaborn as sns
+import yfinance as yf
+from scipy.stats import norm
+import pandas as pd
+from scipy.optimize import minimize
+
+ticker_symbol = 'AAPL'
+ticker_data = yf.Ticker(ticker_symbol)
+real_time_data = ticker_data.history(period='1d')
+current_price = real_time_data['Close'].iloc[-1]
+
+# Getting dividend yield
+dividend_yield_info = ticker_data.info['dividendYield']
+q = dividend_yield_info if dividend_yield_info is not None else 0
+
+S= current_price
+K= 178
+B= 200
+T=1
+r = 0.025  # Risk-free rate
+
+# Calculate the forward price
+def calculate_forward_price(S, r, q, T):
+    F = S * np.exp((r - q) * T)
+    return F
+F = calculate_forward_price(S, r, q, T)
+# SVI volatility surface
+@jit(nopython=True)
+def volatility_surface(K, T, a, b, rho, m, s, F):
+    k = np.log(K / F)
+    return a + b * (rho * (k - m) + np.sqrt((k - m) ** 2 + s ** 2))
+
+
+# Implied volaatility
+
+# Fetching AAPL options data
+ticker = 'AAPL'
+stock = yf.Ticker(ticker)
+
+# Specific expiration date and strike price
+specific_expiration_date = '2023-09-15'
+specific_strike_price = 190
+
+# Fetch options data for specific expiration date
+options_data = stock.option_chain(specific_expiration_date)
+
+# Select specific call option
+call_option = options_data.calls.loc[options_data.calls['strike'] == specific_strike_price].iloc[0]
+
+
+# Black-Scholes formula
+def black_scholes(S, K, T, r, sigma, option_type='call'):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    if option_type == 'call':
+        return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    else:
+        return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
+
+# Vega function
+def vega(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    return S * np.sqrt(T) * norm.pdf(d1)
+
+
+def implied_volatility(option, S, r, T):
+    sigma = 0.2  # Initial guess
+    K = option['strike']
+    market_price = option['lastPrice']
+    for i in range(100):  # i is now defined as the loop index
+        BS_price = black_scholes(S, K, T, r, sigma)
+        vega_value = vega(S, K, T, r, sigma)
+        sigma -= (BS_price - market_price) / (vega_value + 1e-5)
+        print(f"Iteration {i}: sigma={sigma}, BS_price={BS_price}, market_price={market_price}")
+        if abs(BS_price - market_price) < 1e-5:
+            break
+    return sigma
+
+
+# Current stock price and risk-free rate
+S = stock.history().iloc[-1]['Close']
+r = 0.025
+
+# Time to expiration
+T = (pd.Timestamp(specific_expiration_date) - pd.Timestamp.now()).days / 365
+
+# Calculating implied volatility
+iv = implied_volatility(call_option, S, r, T)
+print(f"Implied Volatility: {iv * 100:.2f}%")
+
+# Define a list of strikes and maturities (you will fill these based on your data)
+strikes = [180, 185, 190, 195, 200]
+maturities = ['2023-09-15', '2023-12-15', '2024-03-15']
+
+# Create a DataFrame to store the implied volatilities
+iv_surface = pd.DataFrame(index=strikes, columns=maturities)
+
+# Populate the DataFrame with implied volatilities
+for strike in strikes:
+    for maturity in maturities:
+        # Fetch specific option data for the given strike and maturity
+        options_data = stock.option_chain(maturity)
+        call_option = options_data.calls.loc[options_data.calls['strike'] == strike].iloc[0]
+
+        # Calculate time to expiration
+        T = (pd.Timestamp(maturity) - pd.Timestamp.now()).days / 365
+
+        # Calculate implied volatility
+        iv = implied_volatility(call_option, S, r, T)
+
+        # Store the result in the DataFrame
+        iv_surface.loc[strike, maturity] = iv
+
+print(iv_surface)
+
+
+# Define the loss function
+def loss(params):
+    a, b, rho_svi, m, s = params
+    sum_of_squares = 0
+    for strike in iv_surface.index:
+        for maturity_date in iv_surface.columns:
+            # Convert maturity_date to time to maturity (in years)
+            maturity = (pd.Timestamp(maturity_date) - pd.Timestamp.now()).days / 365
+
+            market_iv = iv_surface.loc[strike, maturity_date]
+            # F can be forward price or other relevant value for your model
+            F = strike  # or other calculation
+            svi_iv = volatility_surface(strike, maturity, a, b, rho_svi, m, s, F)  # Corrected line
+            sum_of_squares += (svi_iv - market_iv) ** 2
+    return sum_of_squares
+
+
+# Initial guess for the parameters
+initial_guess = [0.04, 0.4, 0, 0, 0.2]
+
+# Run the optimization
+result = minimize(loss, initial_guess, method='Nelder-Mead')
+
+# Extract the optimized parameters
+a, b, rho_svi, m, s = result.x
+
+print("Optimized parameters:")
+print("a:", a)
+print("b:", b)
+print("rho_svi:", rho_svi)
+print("m:", m)
+print("s:", s)
+
+
+@jit(nopython=True)
+def barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F, r=0.01, v0=0.04, kappa=1.5, theta=0.04, xi=0.3, rho=-0.6,
+                         lambda_jump=0, mu_jump=0, delta_jump=0, q=0.01, option='call', barrier_type='up-and-out',
+                         N=100000, M=100):
+    dt = T / M  # Time step for the simulation
+    option_price = 0.0  # Initialize the option price
+
+    for i in range(N):  # Loop over N simulations
+        S_t = S  # Initialize asset price
+        v_t = v0  # Initialize volatility
+        crossed_barrier = False  # Flag for barrier crossing
+
+        for j in range(M):  # Loop over M time steps
+            sigma = volatility_surface(K, T - j * dt, a, b, rho_svi, m, s, F)  # Volatility from SVI surface
+            Z1 = np.random.normal(0, 1)  # Random number for volatility
+            Z2 = rho * Z1 + np.sqrt(1 - rho ** 2) * np.random.normal(0, 1)  # Random number for asset price
+
+            # Heston model with Milstein method
+            v_t = max(v_t, 0)
+            v_t_new = v_t + kappa * (theta - v_t) * dt + xi * np.sqrt(v_t) * np.sqrt(dt) * Z1 + 0.25 * xi ** 2 * dt * (
+                        Z1 ** 2 - 1)
+            v_t = v_t_new
+
+            jump = np.random.poisson(lambda_jump * dt)  # Poisson jump
+            S_jump = np.exp(mu_jump * jump + 0.5 * delta_jump ** 2 * jump) if jump > 0 else 1  # Jump size
+
+            # Asset price with Milstein method, now including jumps
+            dS_t = (r - q - 0.5 * v_t) * S_t * dt + np.sqrt(v_t * S_t) * np.sqrt(dt) * Z2
+            S_t = S_t + dS_t + 0.5 * v_t * S_t * dt * (Z2 ** 2 - 1) * S_jump
+
+            # Check barrier condition
+            if barrier_type == 'up-and-out' and S_t > B:
+                crossed_barrier = True
+                break
+            elif barrier_type == 'down-and-out' and S_t < B:
+                crossed_barrier = True
+                break
+
+        # Payoff calculation based on option type and barrier crossing
+        if crossed_barrier and (barrier_type == 'up-and-out' or barrier_type == 'down-and-out'):
+            payoff = 0
+        else:
+            payoff = max(S_t - K, 0) if option == 'call' else max(K - S_t, 0)
+
+        option_price += np.exp(-r * T) * payoff  # Discounted payoff
+
+    option_price /= N  # Average over simulations
+
+    return option_price
+
+
+price = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)
+print(f"The price of the up-and-out call barrier option is: ${price:.2f}")
+
+def calculate_option_greeks(S, K, B, T, a, b, rho_svi, m, s, F, option_type='call'):
+    # Small changes for numerical derivatives
+    dS = 0.01 * S
+    d_sigma = 0.01 * a  # Volatility parameter
+    dT = 0.01 * T
+
+    # Option price
+    price = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)
+
+    # Delta Calculation
+    price_plus_dS = barrier_option_price(S + dS, K, B, T, a, b, rho_svi, m, s, F)
+    delta = (price_plus_dS - price) / dS
+
+    # Gamma Calculation
+    price_minus_dS = barrier_option_price(S - dS, K, B, T, a, b, rho_svi, m, s, F)
+    gamma = (price_plus_dS - 2 * price + price_minus_dS) / (dS ** 2)
+
+    # Vega Calculation
+    price_plus_d_sigma = barrier_option_price(S, K, B, T, a + d_sigma, b, rho_svi, m, s, F)
+    vega = (price_plus_d_sigma - price) / d_sigma
+
+    # Theta Calculation
+    price_plus_dT = barrier_option_price(S, K, B, T + dT, a, b, rho_svi, m, s, F)
+    theta = (price_plus_dT - price) / dT
+
+    return delta, gamma, vega, theta
+
+# Function to calculate Vega for a given underlying price and volatility
+def calculate_vega(S, a, T, K=K, B=B, r=r, b=b, rho_svi=rho_svi, m=m, s=s, F=F):
+    return (barrier_option_price(S, K, B, T, a + d_sigma, b, rho_svi, m, s, F) -
+            barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)) / d_sigma
+
+# Function to calculate Delta for a given underlying price and time
+def calculate_delta(S, T, a=a, K=K, B=B, r=r, b=b, rho_svi=rho_svi, m=m, s=s, F=F):
+    return (barrier_option_price(S + dS, K, B, T, a, b, rho_svi, m, s, F) -
+            barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)) / dS
+
+# Function to calculate Gamma for a given underlying price
+def calculate_gamma(S, T, a=a, K=K, B=B, r=r, b=b, rho_svi=rho_svi, m=m, s=s, F=F):
+    return (barrier_option_price(S + dS, K, B, T, a, b, rho_svi, m, s, F) -
+            2 * barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) +
+            barrier_option_price(S - dS, K, B, T, a, b, rho_svi, m, s, F)) / (dS ** 2)
+
+# Vanna
+vanna = (calculate_vega(S + dS, a, T) - calculate_vega(S, a, T)) / dS
+
+# Vomma (Volga)
+vomma = (calculate_vega(S, a + d_sigma, T) - calculate_vega(S, a, T)) / d_sigma
+
+# Charm (Delta Bleed)
+charm = (calculate_delta(S, T + dT) - calculate_delta(S, T)) / dT
+
+# Veta
+veta = (calculate_vega(S, a, T + dT) - calculate_vega(S, a, T)) / dT
+
+# Speed
+speed = (calculate_gamma(S + dS, T) - calculate_gamma(S, T)) / dS
+
+vanna, vomma, charm, veta, speed
+
+def hedge_greeks(portfolio, call_delta, call_gamma, call_vega, call_theta, put_delta, put_gamma, put_vega, put_theta):
+    # Calculate the number of call and put options to buy/sell to neutralize Delta
+    num_calls_to_buy = -portfolio.delta / call_delta
+    num_puts_to_buy = (portfolio.delta - num_calls_to_buy * call_delta) / put_delta
+
+    # Adjust for Gamma, Vega, and Theta
+    # ... (Additional logic to further neutralize Gamma, Vega, and Theta if needed)
+
+    return num_calls_to_buy, num_puts_to_buy
+# Simulation Loop
+# Define a constant volatility value (you can adjust this based on your needs)
+volatility = 0.2
+def random_price_movement(S, volatility):
+    return np.random.normal(loc=0, scale=volatility) * S
+portfolio = Portfolio()
+
+# Simulation Loop
+for step in range(100):  # 100 simulation steps
+    # Simulate random price movement
+    price_movement = random_price_movement(S, volatility)
+    S += price_movement
+
+    # Update portfolio PnL
+    portfolio.update_pnl(price_movement)
+
+    # Calculate Greeks for individual call and put options
+    call_delta, call_gamma, call_vega, call_theta = calculate_option_greeks(S, K, B, T, a, b, rho_svi, m, s, F, option_type='call')
+    put_delta, put_gamma, put_vega, put_theta = calculate_option_greeks(S, K, B, T, a, b, rho_svi, m, s, F, option_type='put')
+
+    # Hedge Greeks
+    num_calls_to_buy, num_puts_to_buy = hedge_greeks(portfolio, call_delta, call_gamma, call_vega, call_theta, put_delta, put_gamma, put_vega, put_theta)
+
+    # Update portfolio Greeks
+    portfolio.update_greeks(num_calls_to_buy * call_delta, num_calls_to_buy * call_gamma, num_calls_to_buy * call_vega, num_calls_to_buy * call_theta)
+    portfolio.update_greeks(num_puts_to_buy * put_delta, num_puts_to_buy * put_gamma, num_puts_to_buy * put_vega, num_puts_to_buy * put_theta)
+
+print(f"Step {step}: PnL={portfolio.pnl}, Delta={portfolio.delta}, Gamma={portfolio.gamma}, Vega={portfolio.vega}, Theta={portfolio.theta}")
+print(f"Hedging Action: Buy {num_calls_to_buy} Calls, Buy {num_puts_to_buy} Puts")
+
+from mpl_toolkits.mplot3d import Axes3D
+
+# Create a meshgrid for strike prices and maturities
+strike_mesh, maturity_mesh = np.meshgrid(strikes, maturities)
+
+# Calculate the implied volatilities using the SVI model
+iv_mesh = np.vectorize(volatility_surface)(strike_mesh, maturity_mesh, a, b, rho_svi, m, s, F)
+
+# Create a 3D plot
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.plot_surface(strike_mesh, maturity_mesh, iv_mesh, cmap='viridis')
+
+# Add labels
+ax.set_xlabel('Strike Price')
+ax.set_ylabel('Maturity')
+ax.set_zlabel('Implied Volatility')
+
+plt.show()
+# Sensitivity to Strike Price
+def sensitivity_to_strike():
+    strike_prices = np.linspace(150, 200, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for K in strike_prices]
+    plt.plot(strike_prices, prices)
+    plt.title('Sensitivity to Strike Price')
+    plt.xlabel('Strike Price')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_strike()
+
+def sensitivity_to_barrier():
+    barriers = np.linspace(150, 250, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for B in barriers]
+    plt.plot(barriers, prices)
+    plt.title('Sensitivity to Barrier Level')
+    plt.xlabel('Barrier Level')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_barrier()
+
+def sensitivity_to_maturity():
+    maturities = np.linspace(0.1, 2, 50) # From 0.1 year to 2 years
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for T in maturities]
+    plt.plot(maturities, prices)
+    plt.title('Sensitivity to Time to Maturity')
+    plt.xlabel('Time to Maturity (years)')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_maturity()
+
+def sensitivity_to_a():
+    a_values = np.linspace(0.01, 0.1, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for a in a_values]
+    plt.plot(a_values, prices)
+    plt.title('Sensitivity to Parameter a')
+    plt.xlabel('a')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_a()
+
+def sensitivity_to_b():
+    b_values = np.linspace(0.2, 0.6, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for b in b_values]
+    plt.plot(b_values, prices)
+    plt.title('Sensitivity to Parameter b')
+    plt.xlabel('b')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_b()
+
+def sensitivity_to_rho_svi():
+    rho_svi_values = np.linspace(-1, 1, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for rho_svi in rho_svi_values]
+    plt.plot(rho_svi_values, prices)
+    plt.title('Sensitivity to Parameter rho_svi')
+    plt.xlabel('rho_svi')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_rho_svi()
+
+def sensitivity_to_m():
+    m_values = np.linspace(-0.2, 0.2, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for m in m_values]
+    plt.plot(m_values, prices)
+    plt.title('Sensitivity to Parameter m')
+    plt.xlabel('m')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_m()
+
+def sensitivity_to_s():
+    s_values = np.linspace(0.1, 0.3, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for s in s_values]
+    plt.plot(s_values, prices)
+    plt.title('Sensitivity to Parameter s')
+    plt.xlabel('s')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_s()
+
+#Plots for Greeks with underlying price
+
+# Defining a range of underlying prices
+underlying_prices = np.linspace(S * 0.8, S * 1.2, 100)
+
+# Calculating Greeks for different underlying prices
+deltas = [ (barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F) - 
+            barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)) / dS 
+           for price in underlying_prices]
+
+gammas = [ (barrier_option_price(price + dS, K, B, T, a, b, rho_svi, m, s, F) - 
+            2 * barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F) + 
+            barrier_option_price(price - dS, K, B, T, a, b, rho_svi, m, s, F)) / (dS ** 2) 
+           for price in underlying_prices]
+
+vegas = [ (barrier_option_price(price, K, B, T, a + d_sigma, b, rho_svi, m, s, F) - 
+           barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F)) / d_sigma 
+          for price in underlying_prices]
+
+thetas = [ (barrier_option_price(price, K, B, T + dT, a, b, rho_svi, m, s, F) - 
+            barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F)) / dT 
+           for price in underlying_prices]
+
+# Plotting Delta
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, deltas, label='Delta')
+plt.xlabel('Underlying Price')
+plt.ylabel('Delta')
+plt.title('Delta vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Gamma
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, gammas, label='Gamma')
+plt.xlabel('Underlying Price')
+plt.ylabel('Gamma')
+plt.title('Gamma vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Vega
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, vegas, label='Vega')
+plt.xlabel('Underlying Price')
+plt.ylabel('Vega')
+plt.title('Vega vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Theta
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, thetas, label='Theta')
+plt.xlabel('Underlying Price')
+plt.ylabel('Theta')
+plt.title('Theta vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+#Plots for greeks vs volaility
+# Defining a range of volatilities
+volatilities = np.linspace(a * 0.5, a * 1.5, 100)
+
+# Calculating Greeks for different volatilities
+deltas_vol = [(barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F) -
+               barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)) / dS
+              for vol in volatilities]
+
+gammas_vol = [(barrier_option_price(S, K, B, T, vol + d_sigma, b, rho_svi, m, s, F) -
+               2 * barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F) +
+               barrier_option_price(S, K, B, T, vol - d_sigma, b, rho_svi, m, s, F)) / (dS ** 2)
+              for vol in volatilities]
+
+vegas_vol = [(barrier_option_price(S, K, B, T, vol + d_sigma, b, rho_svi, m, s, F) -
+              barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F)) / d_sigma
+             for vol in volatilities]
+
+thetas_vol = [(barrier_option_price(S, K, B, T + dT, vol, b, rho_svi, m, s, F) -
+               barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F)) / dT
+              for vol in volatilities]
+
+# Plotting Delta vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, deltas_vol, label='Delta')
+plt.xlabel('Volatility')
+plt.ylabel('Delta')
+plt.title('Delta vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Gamma vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, gammas_vol, label='Gamma')
+plt.xlabel('Volatility')
+plt.ylabel('Gamma')
+plt.title('Gamma vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Vega vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, vegas_vol, label='Vega')
+plt.xlabel('Volatility')
+plt.ylabel('Vega')
+plt.title('Vega vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Theta vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, thetas_vol, label='Theta')
+plt.xlabel('Volatility')
+plt.ylabel('Theta')
+plt.title('Theta vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()

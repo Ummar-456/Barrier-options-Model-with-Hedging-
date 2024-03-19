@@ -1,0 +1,50 @@
+# 1. Sensitivity to Stock Price
+stock_prices = np.linspace(150, 200, 20)
+option_prices_stock = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for S in stock_prices]
+plt.figure()
+plt.plot(stock_prices, option_prices_stock)
+plt.title('Sensitivity to Stock Price')
+plt.xlabel('Stock Price')
+plt.ylabel('Option Price')
+plt.show()
+
+# 2. Sensitivity to Volatility
+volatilities = np.linspace(0.1, 0.3, 20)
+option_prices_vol = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for sigma in volatilities]
+plt.figure()
+plt.plot(volatilities, option_prices_vol)
+plt.title('Sensitivity to Volatility')
+plt.xlabel('Volatility')
+plt.ylabel('Option Price')
+plt.show()
+
+
+# 3. Sensitivity to Interest Rate
+interest_rates = np.linspace(0.01, 0.1, 20)
+option_prices_rate = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for r in interest_rates]
+plt.figure()
+plt.plot(interest_rates, option_prices_rate)
+plt.title('Sensitivity to Interest Rate')
+plt.xlabel('Interest Rate')
+plt.ylabel('Option Price')
+plt.show()
+
+# 4. Sensitivity to Time to Maturity
+maturities = np.linspace(0.5, 2, 20)
+option_prices_time = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for T in maturities]
+plt.figure()
+plt.plot(maturities, option_prices_time)
+plt.title('Sensitivity to Time to Maturity')
+plt.xlabel('Time to Maturity')
+plt.ylabel('Option Price')
+plt.show()
+
+# 5. Sensitivity to Barrier Level
+barrier_levels = np.linspace(110, 200, 20)
+option_prices_barrier = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for B in barrier_levels]
+plt.figure()
+plt.plot(barrier_levels, option_prices_barrier)
+plt.title('Sensitivity to Barrier Level')
+plt.xlabel('Barrier Level')
+plt.ylabel('Option Price')
+plt.show()

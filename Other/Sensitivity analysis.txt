@@ -1,0 +1,92 @@
+# Sensitivity to Strike Price
+def sensitivity_to_strike():
+    strike_prices = np.linspace(150, 200, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for K in strike_prices]
+    plt.plot(strike_prices, prices)
+    plt.title('Sensitivity to Strike Price')
+    plt.xlabel('Strike Price')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_strike()
+
+def sensitivity_to_barrier():
+    barriers = np.linspace(150, 250, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for B in barriers]
+    plt.plot(barriers, prices)
+    plt.title('Sensitivity to Barrier Level')
+    plt.xlabel('Barrier Level')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_barrier()
+
+def sensitivity_to_maturity():
+    maturities = np.linspace(0.1, 2, 50) # From 0.1 year to 2 years
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for T in maturities]
+    plt.plot(maturities, prices)
+    plt.title('Sensitivity to Time to Maturity')
+    plt.xlabel('Time to Maturity (years)')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_maturity()
+
+def sensitivity_to_a():
+    a_values = np.linspace(0.01, 0.1, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for a in a_values]
+    plt.plot(a_values, prices)
+    plt.title('Sensitivity to Parameter a')
+    plt.xlabel('a')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_a()
+
+def sensitivity_to_b():
+    b_values = np.linspace(0.2, 0.6, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for b in b_values]
+    plt.plot(b_values, prices)
+    plt.title('Sensitivity to Parameter b')
+    plt.xlabel('b')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_b()
+
+def sensitivity_to_rho_svi():
+    rho_svi_values = np.linspace(-1, 1, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for rho_svi in rho_svi_values]
+    plt.plot(rho_svi_values, prices)
+    plt.title('Sensitivity to Parameter rho_svi')
+    plt.xlabel('rho_svi')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_rho_svi()
+
+def sensitivity_to_m():
+    m_values = np.linspace(-0.2, 0.2, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for m in m_values]
+    plt.plot(m_values, prices)
+    plt.title('Sensitivity to Parameter m')
+    plt.xlabel('m')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_m()
+
+def sensitivity_to_s():
+    s_values = np.linspace(0.1, 0.3, 50)
+    prices = [barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F) for s in s_values]
+    plt.plot(s_values, prices)
+    plt.title('Sensitivity to Parameter s')
+    plt.xlabel('s')
+    plt.ylabel('Option Price')
+    plt.show()
+
+sensitivity_to_s()
+
+
+
+

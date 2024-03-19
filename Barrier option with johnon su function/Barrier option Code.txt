@@ -1,0 +1,115 @@
+import numpy as np 
+import pandas as pd 
+import yfinance as yf 
+import scipy.stats as sps
+import scipy.optimize as spop
+import matplotlib.pyplot as plt 
+
+ticker = 'AMZN'
+start = '2018-01-13'
+end = '2023-08-25'
+#retrieve data
+prices = yf.download(ticker, start, end)['Close']
+#calculate and sort returns
+returns = np.array(prices[1:])/np.array(prices[:-1]) - 1
+returns = np.sort(returns)
+#construct empirical distribution function
+edf = np.arange(1, len(returns)+1)/len(returns)
+#calculate mean and standard deviation
+mean = np.average(returns)
+std = np.std(returns)
+#optimise Johnson SU distribution parameters using maximum likelihood estimation
+def johnson_su_optimisation(k):
+    k[1] = abs(k[1])
+    k[3] = abs(k[3])
+    pdf = k[3]/(k[1]*(2*np.pi)**(1/2))/(1 + ((returns - k[0])/k[1])**2)**(1/2)*np.exp(-1/2*(k[2] + k[3]*np.arcsinh((returns - k[0])/k[1]))**2)
+    return -np.sum(np.log(pdf))
+#retrieve optimal distribution parameters
+res = spop.minimize(johnson_su_optimisation, [mean, std, 0, 1], method='Nelder-Mead')
+su_loc_1 = res.x[0]
+su_scale_1 = abs(res.x[1])
+su_loc_2 = res.x[2]
+su_scale_2 = abs(res.x[3])
+#calculate the cumulative distribution function
+cdf = sps.norm.cdf(su_loc_2 + su_scale_2*np.arcsinh((returns - su_loc_1)/su_scale_1))
+#visualise the distribution functions
+plt.plot(returns, edf)
+plt.plot(returns, cdf)
+plt.show()
+#evaluate the goodness-of-fit using Kolmogorov-Smirnov test
+supremum = max(abs(edf - cdf))
+p_value = np.exp(-supremum**2*len(returns))
+print('The p-value of the Kolmorogov-Smirnov test equals '+str(round(p_value*100,4))+'%')
+if p_value < 0.1:
+    print('The distribution does not fit the data')
+else:
+    print('The distribution fits the data')
+
+#retreiving options data 
+options = yf.Ticker(ticker).option_chain('2024-02-16')
+calls = options.calls
+puts  = options.puts
+calls
+puts
+
+plt.plot(calls['strike'], calls['lastPrice'])
+plt.plot(puts['strike'], puts['lastPrice'])
+
+#monte carlo valuation 
+maturity = 132
+n_sim = 10000
+seed = np.random.random((maturity,n_sim))
+seed
+
+sim_returns = su_loc_1 + su_scale_1*np.sinh((sps.norm.ppf(seed) - su_loc_2)/su_scale_2)
+sim_returns
+sim_prices = prices[-1]*pd.DataFrame(1+sim_returns).cumprod()
+plt.plot(sim_prices)
+max_prices = sim_prices.max()
+min_prices = sim_prices.min()
+price_at_expiry = sim_prices.iloc[-1]
+sim_prices
+
+#option characterstics for barrier options
+strike = 150 
+barrier_up = 170 
+barrier_down = 120 
+risk_free = 0.07
+
+#option payoffs
+up_in_payoff = (max_prices >= barrier_up) *np.maximum(0,price_at_expiry - strike)
+up_out_payoff = (max_prices < barrier_up) *np.maximum(0,price_at_expiry - strike)
+#for these strikes and barriers the below acts as puts
+down_in_payoff = (min_prices <= barrier_down) *np.maximum(0,strike - price_at_expiry)
+down_out_payoff = (min_prices > barrier_down) *np.maximum(0,strike - price_at_expiry)
+
+plt.scatter(price_at_expiry, up_in_payoff)
+plt.scatter(price_at_expiry, up_out_payoff)
+plt.scatter(price_at_expiry, down_out_payoff)
+plt.scatter(price_at_expiry, down_in_payoff)
+up_in_value = np.average(up_in_payoff)/(1+risk_free)**(maturity/252)
+up_out_value = np.average(up_out_payoff)/(1+risk_free)**(maturity/252)
+down_in_value = np.average(down_in_payoff)/(1+risk_free)**(maturity/252)
+down_out_value = np.average(down_out_payoff)/(1+risk_free)**(maturity/252)
+print('The value of the up-and-in call at strike ' +str(strike)+' and barrier ' +str(barrier_up) +' is ' +str(round(up_in_value,2))+'.')
+print('The value of the up-and-out call at strike ' +str(strike)+' and barrier ' +str(barrier_up) +' is ' +str(round(up_out_value,2))+'.')
+print('The value of the down-and-in call at strike ' +str(strike)+' and barrier ' +str(barrier_down) +' is ' +str(round(down_in_value,2))+'.')
+print('The value of the down-and-out call at strike ' +str(strike)+' and barrier ' +str(barrier_down) +' is ' +str(round(down_out_value,2))+'.')
+call_value = up_in_value + up_out_value
+put_value = down_in_value + down_out_value 
+call_price = float(calls[calls['strike'] == strike]['lastPrice'])
+put_price = float(puts[puts['strike'] == strike]['lastPrice'])
+print('The fair value of the call at the strike ' +str(strike) + ' is ' +str(round(call_value,2)) +'.')
+if call_value >call_price: 
+  print('The call option is undervalued ' +str(round(call_price)) +'.')
+else: 
+  print('The call option is overvalued ' +str(round(call_price)) +'.')
+print('The fair value of the put at the strike ' +str(strike) + ' is ' +str(round(put_value,2)) +'.')
+if put_value >put_price: 
+  print('The put option is undervalued at' +str(round(put_price)) +'.')
+else: 
+  print('The put option is overvalued at ' +str(round(put_price)) +'.')
+
+
+
+

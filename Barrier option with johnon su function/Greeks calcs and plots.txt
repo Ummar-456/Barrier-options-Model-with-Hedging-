@@ -1,0 +1,32 @@
+
+# Function to calculate Greeks
+def calculate_greeks(volatility, interest_rate, change_in_volatility, change_in_interest_rate, payoff_func):
+    up_in_payoff, up_out_payoff, down_in_payoff, down_out_payoff = payoff_func(volatility, interest_rate)
+    new_up_in_payoff, new_up_out_payoff, new_down_in_payoff, new_down_out_payoff = payoff_func(volatility + change_in_volatility, interest_rate + change_in_interest_rate)
+    
+    greeks = {}
+    for payoff, new_payoff, name in [(up_in_payoff, new_up_in_payoff, 'up-and-in'),
+                                     (up_out_payoff, new_up_out_payoff, 'up-and-out'),
+                                     (down_in_payoff, new_down_in_payoff, 'down-and-in'),
+                                     (down_out_payoff, new_down_out_payoff, 'down-and-out')]:
+        delta = np.average(payoff) / prices[-1]
+        gamma = np.average(payoff * price_at_expiry) / (prices[-1] ** 2)
+        theta = -np.average(payoff) / 252
+        vega = (np.average(new_payoff) - np.average(payoff)) / change_in_volatility
+        rho = (np.average(new_payoff) - np.average(payoff)) / change_in_interest_rate
+        
+        greeks[name] = {'Delta': delta, 'Gamma': gamma, 'Theta': theta, 'Vega': vega, 'Rho': rho}
+    
+    return greeks
+
+# Calculating the Greeks for all scenarios
+greeks = calculate_greeks(volatility, risk_free, change_in_volatility, change_in_interest_rate, calculate_payoff)
+
+# Print the Greeks
+for option_type, values in greeks.items():
+    print(f'Greeks for {option_type} option:')
+    for greek_name, value in values.items():
+        print(f'  {greek_name}: {value}')
+    print()
+
+

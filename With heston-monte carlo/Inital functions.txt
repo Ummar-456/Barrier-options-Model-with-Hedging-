@@ -1,0 +1,202 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from numba import jit
+import plotly.graph_objects as go
+import ipywidgets as widgets
+from ipywidgets import interact
+import seaborn as sns
+import yfinance as yf
+from scipy.stats import norm
+import pandas as pd
+from scipy.optimize import minimize
+
+ticker_symbol = 'AAPL'
+try:
+    ticker_data = yf.Ticker(ticker_symbol)
+    real_time_data = ticker_data.history(period='1d')
+except Exception as e:
+    print(f"An error occurred while fetching data: {e}")
+current_price = real_time_data['Close'].iloc[-1]
+
+# Getting dividend yield
+dividend_yield_info = ticker_data.info['dividendYield']
+q = dividend_yield_info if dividend_yield_info is not None else 0
+
+S= current_price
+K= 170
+B= 200
+T=1
+r = 0.025  # Risk-free rate
+
+# Calculate the forward price
+def calculate_forward_price(S, r, q, T):
+    F = S * np.exp((r - q) * T)
+    return F
+F = calculate_forward_price(S, r, q, T)
+# SVI volatility surface
+@jit(nopython=True)
+def volatility_surface(K, T, a, b, rho, m, s, F):
+    k = np.log(K / F)
+    return a + b * (rho * (k - m) + np.sqrt((k - m) ** 2 + s ** 2))
+
+
+# Implied volaatility
+
+# Fetching AAPL options data
+ticker = 'AAPL'
+stock = yf.Ticker(ticker)
+
+# Specific expiration date and strike price
+specific_expiration_date = '2023-09-15'
+specific_strike_price = 190
+
+# Fetch options data for specific expiration date
+options_data = stock.option_chain(specific_expiration_date)
+
+# Select specific call option
+call_option = options_data.calls.loc[options_data.calls['strike'] == specific_strike_price].iloc[0]
+
+
+# Black-Scholes formula
+def black_scholes(S, K, T, r, sigma, option_type='call'):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    if option_type == 'call':
+        return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    else:
+        return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
+
+# Vega function
+def vega(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T) + 1e-5)
+    return S * np.sqrt(T) * norm.pdf(d1)
+
+
+def implied_volatility(option, S, r, T):
+    sigma = 0.2  # Initial guess
+    K = option['strike']
+    market_price = option['lastPrice']
+    for i in range(100):  # i is now defined as the loop index
+        BS_price = black_scholes(S, K, T, r, sigma)
+        vega_value = vega(S, K, T, r, sigma)
+        sigma -= (BS_price - market_price) / (vega_value + 1e-5)
+        print(f"Iteration {i}: sigma={sigma}, BS_price={BS_price}, market_price={market_price}")
+        if abs(BS_price - market_price) < 1e-5:
+            break
+    return sigma
+
+
+# Current stock price and risk-free rate
+S = stock.history().iloc[-1]['Close']
+r = 0.025
+
+# Time to expiration
+T = (pd.Timestamp(specific_expiration_date) - pd.Timestamp.now()).days / 365
+
+# Calculating implied volatility
+iv = implied_volatility(call_option, S, r, T)
+print(f"Implied Volatility: {iv * 100:.2f}%")
+
+# Define a list of strikes and maturities (you will fill these based on your data)
+strikes = [180, 185, 190, 195, 200]
+maturities = ['2023-09-15', '2023-12-15', '2024-03-15']
+
+# Create a DataFrame to store the implied volatilities
+iv_surface = pd.DataFrame(index=strikes, columns=maturities)
+
+# Populate the DataFrame with implied volatilities
+for strike in strikes:
+    for maturity in maturities:
+        # Fetch specific option data for the given strike and maturity
+        options_data = stock.option_chain(maturity)
+        call_option = options_data.calls.loc[options_data.calls['strike'] == strike].iloc[0]
+
+        # Calculate time to expiration
+        T = (pd.Timestamp(maturity) - pd.Timestamp.now()).days / 365
+
+        # Calculate implied volatility
+        iv = implied_volatility(call_option, S, r, T)
+
+        # Store the result in the DataFrame
+        iv_surface.loc[strike, maturity] = iv
+
+print(iv_surface)
+
+
+# Define the loss function
+def loss(params):
+    a, b, rho_svi, m, s = params
+    sum_of_squares = 0
+    for strike in iv_surface.index:
+        for maturity_date in iv_surface.columns:
+            # Convert maturity_date to time to maturity (in years)
+            maturity = (pd.Timestamp(maturity_date) - pd.Timestamp.now()).days / 365
+
+            market_iv = iv_surface.loc[strike, maturity_date]
+            # F can be forward price or other relevant value for your model
+            F = calculate_forward_price(S, r, q, T)
+            svi_iv = volatility_surface(strike, maturity, a, b, rho_svi, m, s, F)
+            sum_of_squares += (svi_iv - market_iv) ** 2
+    return sum_of_squares
+
+
+# Initial guess for the parameters
+initial_guess = [0.04, 0.4, 0, 0, 0.2]
+
+# Run the optimization
+result = minimize(loss, initial_guess, method='Nelder-Mead')
+
+# Extract the optimized parameters
+a, b, rho_svi, m, s = result.x
+
+def fetch_market_price(strike, maturity, ticker='AAPL'):
+    stock = yf.Ticker(ticker)
+    options_data = stock.option_chain(maturity)
+    call_option = options_data.calls.loc[options_data.calls['strike'] == strike]
+    if call_option.empty:
+        return None
+    market_price = call_option.iloc[0]['lastPrice']
+    return market_price
+def loss(params):
+    a, b, rho_svi, m, s, v0, kappa, theta, xi, rho, lambda_jump, mu_jump, delta_jump = params
+    sum_of_squares = 0
+    for strike in strikes:
+        for maturity_date in maturities:
+            market_price = fetch_market_price(strike, maturity_date)
+            if market_price is None:
+                print(f"Data not available for strike={strike}, maturity={maturity_date}")
+                continue
+            maturity = (pd.Timestamp(maturity_date) - pd.Timestamp.now()).days / 365
+            F = calculate_forward_price(S, r, q, maturity)
+            model_price = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F, r, v0, kappa, theta, xi, rho, lambda_jump, mu_jump, delta_jump, q)
+
+            sum_of_squares += (model_price - market_price) ** 2
+    return sum_of_squares
+
+
+
+# Updated initial guess including new parameters
+initial_guess = [0.04, 0.4, 0, 0, 0.2, 0.04, 1.5, 0.04, 0.5, -0.6, 0, 0, 0]  # Added lambda_jump, mu_jump, delta_jump
+
+# Run the optimization
+result = minimize(loss, initial_guess, method='Nelder-Mead')
+
+# Extract the optimized parameters
+a, b, rho_svi, m, s, v0, kappa, theta, xi, rho, lambda_jump, mu_jump, delta_jump = result.x
+
+print("Optimized parameters:")
+print("a:", a)
+print("b:", b)
+print("rho_svi:", rho_svi)
+print("m:", m)
+print("s:", s)
+print("v0:", v0)
+print("kappa:", kappa)
+print("theta:", theta)
+print("xi:", xi)
+print("rho:", rho)
+print("lambda_jump:", lambda_jump)
+print("mu_jump:", mu_jump)
+print("delta_jump:", delta_jump)

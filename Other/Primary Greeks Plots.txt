@@ -1,0 +1,125 @@
+#Plots for Greeks with underlying price
+
+# Defining a range of underlying prices
+underlying_prices = np.linspace(S * 0.8, S * 1.2, 100)
+
+# Calculating Greeks for different underlying prices
+deltas = [ (barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F) - 
+            barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)) / dS 
+           for price in underlying_prices]
+
+gammas = [ (barrier_option_price(price + dS, K, B, T, a, b, rho_svi, m, s, F) - 
+            2 * barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F) + 
+            barrier_option_price(price - dS, K, B, T, a, b, rho_svi, m, s, F)) / (dS ** 2) 
+           for price in underlying_prices]
+
+vegas = [ (barrier_option_price(price, K, B, T, a + d_sigma, b, rho_svi, m, s, F) - 
+           barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F)) / d_sigma 
+          for price in underlying_prices]
+
+thetas = [ (barrier_option_price(price, K, B, T + dT, a, b, rho_svi, m, s, F) - 
+            barrier_option_price(price, K, B, T, a, b, rho_svi, m, s, F)) / dT 
+           for price in underlying_prices]
+
+# Plotting Delta
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, deltas, label='Delta')
+plt.xlabel('Underlying Price')
+plt.ylabel('Delta')
+plt.title('Delta vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Gamma
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, gammas, label='Gamma')
+plt.xlabel('Underlying Price')
+plt.ylabel('Gamma')
+plt.title('Gamma vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Vega
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, vegas, label='Vega')
+plt.xlabel('Underlying Price')
+plt.ylabel('Vega')
+plt.title('Vega vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Theta
+plt.figure(figsize=(10, 6))
+plt.plot(underlying_prices, thetas, label='Theta')
+plt.xlabel('Underlying Price')
+plt.ylabel('Theta')
+plt.title('Theta vs. Underlying Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+#Plots for greeks vs volaility
+# Defining a range of volatilities
+volatilities = np.linspace(a * 0.5, a * 1.5, 100)
+
+# Calculating Greeks for different volatilities
+deltas_vol = [(barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F) -
+               barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)) / dS
+              for vol in volatilities]
+
+gammas_vol = [(barrier_option_price(S, K, B, T, vol + d_sigma, b, rho_svi, m, s, F) -
+               2 * barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F) +
+               barrier_option_price(S, K, B, T, vol - d_sigma, b, rho_svi, m, s, F)) / (dS ** 2)
+              for vol in volatilities]
+
+vegas_vol = [(barrier_option_price(S, K, B, T, vol + d_sigma, b, rho_svi, m, s, F) -
+              barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F)) / d_sigma
+             for vol in volatilities]
+
+thetas_vol = [(barrier_option_price(S, K, B, T + dT, vol, b, rho_svi, m, s, F) -
+               barrier_option_price(S, K, B, T, vol, b, rho_svi, m, s, F)) / dT
+              for vol in volatilities]
+
+# Plotting Delta vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, deltas_vol, label='Delta')
+plt.xlabel('Volatility')
+plt.ylabel('Delta')
+plt.title('Delta vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Gamma vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, gammas_vol, label='Gamma')
+plt.xlabel('Volatility')
+plt.ylabel('Gamma')
+plt.title('Gamma vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Vega vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, vegas_vol, label='Vega')
+plt.xlabel('Volatility')
+plt.ylabel('Vega')
+plt.title('Vega vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting Theta vs Volatility
+plt.figure(figsize=(10, 6))
+plt.plot(volatilities, thetas_vol, label='Theta')
+plt.xlabel('Volatility')
+plt.ylabel('Theta')
+plt.title('Theta vs. Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()

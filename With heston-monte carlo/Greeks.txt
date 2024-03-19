@@ -1,0 +1,76 @@
+#Primary Greeks
+#delta
+delta_S = 1.0  # Small change in asset price
+delta_r = 0.001
+delta_sigma = 0.01  # Small change in volatility, e.g., 1%
+theta_t = 0.001
+
+def calculate_delta_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, delta_S=1.0):
+    # Calculate the option price at S using your barrier_option_price function
+    option_price_S = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)
+
+    # Calculate the option price at S + delta_S using your barrier_option_price function
+    option_price_S_delta = barrier_option_price(S + delta_S, K, B, T, a, b, rho_svi, m, s, F)
+
+    # Calculate Delta
+    Delta = (option_price_S_delta - option_price_S) / delta_S
+
+    return Delta
+# Calculate Delta
+Delta = calculate_delta_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, delta_S)
+#gamma
+def calculate_gamma_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, delta_S=1.0):
+ # Calculate the option price at S - delta_S, S, and S + delta_S
+    option_price_S_minus = barrier_option_price(S - delta_S, K, B, T, a, b, rho_svi, m, s, F)
+    option_price_S = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)
+    option_price_S_plus = barrier_option_price(S + delta_S, K, B, T, a, b, rho_svi, m, s, F)
+
+    # Calculate Gamma
+    Gamma = (option_price_S_plus - 2 * option_price_S + option_price_S_minus) / (delta_S ** 2)
+
+    return Gamma
+Gamma = calculate_gamma_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, delta_S)
+
+#Vega
+def calculate_vega_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, delta_sigma=0.01):
+ # Calculate the option price at sigma and sigma + delta_sigma
+    option_price_sigma = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F)
+    option_price_sigma_delta = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s + delta_sigma, F)
+
+    # Calculate Vega
+    Vega = (option_price_sigma_delta - option_price_sigma) / delta_sigma
+
+    return Vega
+
+# Calculate Vega
+Vega = calculate_vega_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, delta_sigma)
+
+#Rho
+def calculate_rho_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, r, delta_r=0.001):
+  # Calculate the option price at r and r + delta_r
+    option_price_r = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F, r=r)
+    option_price_r_delta = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F, r=r + delta_r)
+
+    # Calculate Rho
+    Rho = (option_price_r_delta - option_price_r) / delta_r
+
+    return Rho
+# Calculate Rho
+Rho = calculate_rho_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, r, delta_r)
+def calculate_theta_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, r, delta_t=0.001):
+    # Calculate the option price at T and T - delta_t
+    option_price_t = barrier_option_price(S, K, B, T, a, b, rho_svi, m, s, F, r=r)
+    option_price_t_delta = barrier_option_price(S, K, B, T - delta_t, a, b, rho_svi, m, s, F, r=r)
+
+    # Calculate Theta (generally, the change in the option price with respect to a decrease in time)
+    Theta = (option_price_t_delta - option_price_t) / delta_t
+
+    return -Theta  # We return -Theta because Theta is usually considered as a negative quantity.
+# Calculate Theta
+Theta = calculate_theta_barrier_option(S, K, B, T, a, b, rho_svi, m, s, F, r, delta_t)
+
+print(f"The Delta for this up and out barrier option is: {Delta}")
+print(f"The Gamma for this up and out Barrier option is: {Gamma}")
+print(f"The Vega for this up and out Barrier option is: {Vega}")
+print(f"The Rho for this up and out Barrier option is: {Rho}")
+print(f"The Theta for this up and out Battier option is: {Theta}")

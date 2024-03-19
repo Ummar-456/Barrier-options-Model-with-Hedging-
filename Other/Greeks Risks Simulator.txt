@@ -1,0 +1,71 @@
+class Portfolio:
+    def __init__(self, call_contracts, put_contracts, delta, gamma, vega, theta, pnl):
+        self.call_contracts = call_contracts
+        self.put_contracts = put_contracts
+        self.delta = delta
+        self.gamma = gamma
+        self.vega = vega
+        self.theta = theta
+        self.pnl = pnl
+def delta_hedge(portfolio, call_delta, put_delta):
+    call_position = -portfolio.delta / call_delta
+    put_position = -portfolio.delta / put_delta
+    portfolio.call_contracts += call_position
+    portfolio.put_contracts += put_position
+    portfolio.delta += call_position * call_delta + put_position * put_delta
+
+def gamma_hedge(portfolio, call_gamma, put_gamma):
+    call_position = -portfolio.gamma / call_gamma
+    put_position = -portfolio.gamma / put_gamma
+    portfolio.call_contracts += call_position
+    portfolio.put_contracts += put_position
+    portfolio.gamma += call_position * call_gamma + put_position * put_gamma
+
+def vega_hedge(portfolio, call_vega, put_vega):
+    call_position = -portfolio.vega / call_vega
+    put_position = -portfolio.vega / put_vega
+    portfolio.call_contracts += call_position
+    portfolio.put_contracts += put_position
+    portfolio.vega += call_position * call_vega + put_position * put_vega
+
+def theta_hedge(portfolio, call_theta, put_theta):
+    call_position = -portfolio.theta / call_theta
+    put_position = -portfolio.theta / put_theta
+    portfolio.call_contracts += call_position
+    portfolio.put_contracts += put_position
+    portfolio.theta += call_position * call_theta + put_position * put_theta
+import numpy as np
+
+def random_price_movement():
+    return np.random.normal(0, 1)
+
+import numpy as np
+
+def random_price_movement():
+    return np.random.normal(0, 1)
+
+simulation_steps = 1000
+underlying_price = current_price  # Example underlying price
+
+# Initialize portfolio
+portfolio = Portfolio(call_contracts=100, put_contracts=100, delta=0, gamma=0, vega=0, theta=0, pnl=0)
+
+# Example Greeks for available options
+option_greeks = {'call_delta': 0.5, 'put_delta': -0.5, 'call_gamma': 0.1, 'put_gamma': 0.1,
+                 'call_vega': 0.2, 'put_vega': 0.2, 'call_theta': -0.01, 'put_theta': -0.01}
+
+for step in range(simulation_steps):
+    price_movement = random_price_movement()
+    underlying_price += price_movement
+
+    # Update portfolio based on price movement (simplified)
+    portfolio.pnl += portfolio.delta * price_movement
+
+    # Apply Greek hedges
+    delta_hedge(portfolio, option_greeks['call_delta'], option_greeks['put_delta'])
+    gamma_hedge(portfolio, option_greeks['call_gamma'], option_greeks['put_gamma'])
+    vega_hedge(portfolio, option_greeks['call_vega'], option_greeks['put_vega'])
+    theta_hedge(portfolio, option_greeks['call_theta'], option_greeks['put_theta'])
+
+    # Report portfolio state
+    print(f"Step {step}: PnL={portfolio.pnl}, Delta={portfolio.delta}, Gamma={portfolio.gamma}, Vega={portfolio.vega}, Theta={portfolio.theta}")
